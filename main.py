@@ -301,40 +301,59 @@ def collect():
 # LLM 生成模块（直接调 DeepSeek API，不用 openai 库）
 # ============================================================
 def generate_article(source):
-    """用 DeepSeek 生成公众号文章"""
+    """用 DeepSeek 生成高质量公众号文章"""
     api_key = os.environ.get("LLM_API_KEY", "")
     base_url = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
     model = os.environ.get("LLM_MODEL", "deepseek-v4-flash")
 
-    source_content = (source.get("content", "") or source.get("snippet", ""))[:3000]
+    source_content = (source.get("content", "") or source.get("snippet", ""))[:4000]
 
-    prompt = f"""你是一位资深财税领域内容创作者，专注于灵活用工结算和人力资源外包方向。
-请基于以下素材写一篇微信公众号文章。
+    prompt = f"""你是一位拥有15年经验的资深财税咨询专家，同时具备注册会计师和税务师资质，专注于灵活用工结算和人力资源外包领域，长期为企业提供合规咨询和实务方案。
 
-要求：
-1. 标题：吸引人但不标题党，15-25字，体现财税/用工主题
-2. 摘要：50字以内，概括核心价值
-3. 正文：1000-1500字，用 HTML 标签格式
-   - <h3> 小标题
-   - <p> 段落
-   - <blockquote> 引用政策原文或重点
-   - <strong> 关键词加粗
-4. 结构：政策解读 → 企业影响 → 合规建议 → 实务指引
-5. 语气：专业但有可读性，面向 HR 和财务从业者
-6. 结尾：引导关注和咨询灵活用工结算服务
+请基于以下素材，撰写一篇高质量的微信公众号文章。
 
+【写作要求】
+1. 标题：专业、有信息量，体现政策要点或实务价值，15-28字。不要用"震惊""必看"等标题党词汇。
+2. 摘要：60字以内，点明文章核心结论或读者能获得的实务价值。
+3. 正文：1500-2200字，用 HTML 标签格式化，要求：
+   - <h3> 用于小标题（每部分一个）
+   - <p> 用于段落，每段聚焦一个要点
+   - <blockquote> 用于引用政策原文、法条编号、数据
+   - <strong> 用于加粗关键术语、数字、风险点
+   - 适当使用 <ul><li> 列举要点
+4. 文章结构（严格按此顺序）：
+   - 【背景导读】用1-2段交代政策出台背景或行业现状，引出本文主题
+   - 【政策要点解读】逐条解读核心内容，引用具体条文或数据，避免笼统
+   - 【企业影响分析】分析对不同类型企业（制造业/服务业/平台企业）的具体影响
+   - 【合规操作指引】给出3-5条可落地的操作建议，每条要具体到操作层面
+   - 【风险提示】点明2-3个常见误区或风险点，用 <strong> 加粗
+   - 【结语】简短收尾，引导关注和咨询
+5. 专业要求：
+   - 必须引用具体政策名称、文号、生效时间（从素材中提取，无则合理标注）
+   - 涉及税务处理要明确税种、税率、计算逻辑
+   - 涉及用工要区分劳动关系/劳务关系/非全日制/平台用工等
+   - 使用专业术语但配通俗解释，面向 HR 负责人和财务主管
+6. 禁止：
+   - 不要写"本文将为您解读"这类套话
+   - 不要重复素材原文，要有分析和增量信息
+   - 不要使用空泛的"非常重要""值得关注"等无信息量表述
+
+【素材信息】
 素材标题：{source['title']}
-素材内容：{source_content}
+素材正文：{source_content}
 素材来源：{source['url']}
 
-请严格输出以下 JSON 格式（不要加 markdown 代码块标记）：
-{{"title":"文章标题","digest":"摘要内容","content":"<h3>小标题</h3><p>正文段落</p>...","source_url":"{source['url']}"}}"""
+请严格输出以下 JSON 格式（不要加 markdown 代码块标记，不要在 JSON 外加任何文字）：
+{{"title":"文章标题","digest":"摘要","content":"<h3>背景导读</h3><p>...</p><h3>政策要点解读</h3><p>...</p>...","source_url":"{source['url']}"}}"""
 
     body = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "max_tokens": 4000,
+        "messages": [
+            {"role": "system", "content": "你是资深财税专家，输出必须专业、准确、有实务价值。严格遵守用户要求的JSON格式输出，不要在JSON外加任何文字。"},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 6000,
     }
 
     url = f"{base_url}/chat/completions"
@@ -365,31 +384,44 @@ def generate_article(source):
 
 
 def generate_image(prompt, width=900, height=383):
-    """用 Pollinations.ai 生成图片，返回 bytes"""
+    """用 Pollinations.ai 生成图片，返回 bytes。用 flux 模型提升质量。"""
     encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true"
-    for attempt in range(2):
-        status, img_bytes = http_get_bytes(url, timeout=90)
-        if status == 200 and len(img_bytes) > 5000:
+    # flux 模型质量更高；加 seed 保证一致性
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&model=flux&seed=42"
+    for attempt in range(3):
+        status, img_bytes = http_get_bytes(url, timeout=120)
+        if status == 200 and len(img_bytes) > 10000:
             return img_bytes
-        print(f"  [图片生成重试 {attempt+1}]")
+        print(f"  [图片生成重试 {attempt+1}] status={status} size={len(img_bytes)}")
+        time.sleep(3)
     print("  [图片生成失败，跳过]")
     return b""
 
 
 def generate_cover(title):
+    """生成高质量封面图（900x500，公众号黄金比例）"""
+    # 从标题提取主题词，让封面更贴合内容
+    keywords = title[:30] if title else "灵活用工 财税政策"
     return generate_image(
-        "Professional business illustration about Chinese finance, taxation, "
-        "flexible employment and HR outsourcing, clean modern flat design, "
-        "blue and white corporate tones, no text, 16:9 aspect ratio",
-        900, 383
+        f"Editorial cover illustration for a Chinese business finance article about: {keywords}. "
+        "Style: premium financial magazine cover, sophisticated isometric 3D illustration, "
+        "deep navy blue and gold color scheme, abstract geometric shapes representing "
+        "documents, handshake, growth chart, employment network. "
+        "Clean composition, lots of negative space, professional corporate aesthetic, "
+        "no text, no watermark, high quality, 16:9",
+        900, 500
     )
 
 
 def generate_inline_image(topic="flexible employment"):
+    """生成高质量内文配图（1080x720）"""
     return generate_image(
-        f"Professional illustration about {topic}, business meeting and documents, "
-        "clean modern style, blue tones, no text",
+        f"Professional editorial illustration about {topic} in China. "
+        "Style: modern flat design with subtle gradients, infographic style, "
+        "showing business professionals, documents, compliance checklist, "
+        "digital platform interface elements. "
+        "Color palette: deep blue, teal, white, with orange accents. "
+        "Clean layout, suitable for business article, no text, high quality, 3:2",
         1080, 720
     )
 
