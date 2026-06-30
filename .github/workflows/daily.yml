@@ -9,7 +9,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: 检出代码
@@ -20,22 +20,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
-        run: pip install -r requirements.txt
-
-      - name: 打印出口 IP（用于配置公众号白名单）
-        run: |
-          echo "GitHub Actions 出口 IP："
-          curl -s https://api.ipify.org || echo "获取失败"
-          echo ""
-
       - name: 执行推送流程
         env:
-          MP_APPID: ${{ secrets.MP_APPID }}
-          MP_SECRET: ${{ secrets.MP_SECRET }}
-          WECOM_CORPID: ${{ secrets.WECOM_CORPID }}
-          WECOM_AGENTID: ${{ secrets.WECOM_AGENTID }}
-          WECOM_SECRET: ${{ secrets.WECOM_SECRET }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
